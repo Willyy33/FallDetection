@@ -1,0 +1,6 @@
+flask
+flask-socketio
+paho-mqtt
+tensorflow
+numpy
+eventlet

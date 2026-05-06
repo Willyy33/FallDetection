@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fall Detection Dashboard</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            padding: 30px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: auto;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+
+        .value {
+            font-size: 22px;
+            font-weight: bold;
+        }
+
+        .normal {
+            color: green;
+        }
+
+        .danger {
+            color: red;
+        }
+
+        .connected {
+            color: green;
+            font-weight: bold;
+        }
+
+        .disconnected {
+            color: red;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+    <h1>ESP32 Fall Detection Dashboard</h1>
+
+    <div class="card">
+        <h2>Connection Status</h2>
+        <p>SocketIO: <span id="socketStatus" class="disconnected">Disconnected</span></p>
+    </div>
+
+    <div class="card">
+        <h2>Device</h2>
+        <p>Device ID: <span id="deviceId">Waiting for data...</span></p>
+        <p>Timestamp: <span id="timestamp">-</span></p>
+    </div>
+
+    <div class="card">
+        <h2>IMU Readings</h2>
+        <div class="grid">
+            <p>Acc X: <span class="value" id="ax">-</span></p>
+            <p>Acc Y: <span class="value" id="ay">-</span></p>
+            <p>Acc Z: <span class="value" id="az">-</span></p>
+            <p>Gyro X: <span class="value" id="gx">-</span></p>
+            <p>Gyro Y: <span class="value" id="gy">-</span></p>
+            <p>Gyro Z: <span class="value" id="gz">-</span></p>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>CNN Prediction</h2>
+        <p>Prediction: <span class="value" id="prediction">Waiting...</span></p>
+        <p>Fall Probability: <span class="value" id="probability">-</span></p>
+    </div>
+</div>
+
+<script>
+    const socket = io(window.location.origin);
+
+    socket.on("connect", function() {
+        console.log("Connected to Flask SocketIO");
+        const status = document.getElementById("socketStatus");
+        status.innerText = "Connected";
+        status.className = "connected";
+    });
+
+    socket.onAny(function(eventName, ...args) {
+        console.log("SocketIO event:", eventName, args);
+    });
+
+    socket.on("disconnect", function() {
+        console.log("Disconnected from Flask SocketIO");
+        const status = document.getElementById("socketStatus");
+        status.innerText = "Disconnected";
+        status.className = "disconnected";
+    });
+
+    socket.on("sensor_update", function(data) {
+        console.log("Received sensor data:", data);
+
+        if (!data || !data.imu) {
+            console.warn("Missing imu payload:", data);
+            return;
+        }
+
+        document.getElementById("deviceId").innerText = data.deviceId ?? "-";
+        document.getElementById("timestamp").innerText = data.timestamp ?? "-";
+
+        document.getElementById("ax").innerText = Number(data.imu.ax ?? 0).toFixed(4);
+        document.getElementById("ay").innerText = Number(data.imu.ay ?? 0).toFixed(4);
+        document.getElementById("az").innerText = Number(data.imu.az ?? 0).toFixed(4);
+
+        document.getElementById("gx").innerText = Number(data.imu.gx ?? 0).toFixed(4);
+        document.getElementById("gy").innerText = Number(data.imu.gy ?? 0).toFixed(4);
+        document.getElementById("gz").innerText = Number(data.imu.gz ?? 0).toFixed(4);
+
+        if (data.predictionResult) {
+            const pred = document.getElementById("prediction");
+            const prob = document.getElementById("probability");
+
+            pred.innerText = data.predictionResult.prediction;
+            prob.innerText = Number(data.predictionResult.fallProbability).toFixed(4);
+
+            if (data.predictionResult.fallProbability >= 0.5) {
+                pred.className = "value danger";
+            } else {
+                pred.className = "value normal";
+            }
+        } else {
+            document.getElementById("prediction").innerText = "Collecting 100 samples...";
+            document.getElementById("probability").innerText = "-";
+        }
+    });
+</script>
+
+</body>
+</html>
