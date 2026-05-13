@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Fall Detection Dashboard</title>
+    <title>Pre-Fall Detection Dashboard</title>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 
     <style>
@@ -12,7 +12,7 @@
         }
 
         .container {
-            max-width: 900px;
+            max-width: 1200px;
             margin: auto;
         }
 
@@ -30,8 +30,14 @@
             gap: 12px;
         }
 
+        .shoe-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
         .value {
-            font-size: 22px;
+            font-size: 20px;
             font-weight: bold;
         }
 
@@ -52,40 +58,101 @@
             color: red;
             font-weight: bold;
         }
+
+        h1, h2, h3 {
+            margin-top: 0;
+        }
+
+        @media (max-width: 900px) {
+            .shoe-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 
 <body>
+
 <div class="container">
-    <h1>ESP32 Fall Detection Dashboard</h1>
+    <h1>ESP32 Pre-Fall Detection Dashboard</h1>
 
     <div class="card">
         <h2>Connection Status</h2>
         <p>SocketIO: <span id="socketStatus" class="disconnected">Disconnected</span></p>
-    </div>
-
-    <div class="card">
-        <h2>Device</h2>
-        <p>Device ID: <span id="deviceId">Waiting for data...</span></p>
-        <p>Timestamp: <span id="timestamp">-</span></p>
-    </div>
-
-    <div class="card">
-        <h2>IMU Readings</h2>
-        <div class="grid">
-            <p>Acc X: <span class="value" id="ax">-</span></p>
-            <p>Acc Y: <span class="value" id="ay">-</span></p>
-            <p>Acc Z: <span class="value" id="az">-</span></p>
-            <p>Gyro X: <span class="value" id="gx">-</span></p>
-            <p>Gyro Y: <span class="value" id="gy">-</span></p>
-            <p>Gyro Z: <span class="value" id="gz">-</span></p>
-        </div>
+        <p>Last Device: <span id="lastDevice">Waiting...</span></p>
+        <p>Last Timestamp: <span id="lastTimestamp">-</span></p>
     </div>
 
     <div class="card">
         <h2>CNN Prediction</h2>
         <p>Prediction: <span class="value" id="prediction">Waiting...</span></p>
         <p>Fall Probability: <span class="value" id="probability">-</span></p>
+    </div>
+
+    <div class="card">
+        <h2>Waist IMU</h2>
+
+        <div class="grid">
+            <p>Acc X: <span class="value" id="waist_ax">-</span></p>
+            <p>Acc Y: <span class="value" id="waist_ay">-</span></p>
+            <p>Acc Z: <span class="value" id="waist_az">-</span></p>
+
+            <p>Gyro X: <span class="value" id="waist_gx">-</span></p>
+            <p>Gyro Y: <span class="value" id="waist_gy">-</span></p>
+            <p>Gyro Z: <span class="value" id="waist_gz">-</span></p>
+        </div>
+    </div>
+
+    <div class="shoe-grid">
+
+        <div class="card">
+            <h2>Left Shoe Module</h2>
+
+            <h3>IMU</h3>
+            <div class="grid">
+                <p>Acc X: <span class="value" id="left_ax">-</span></p>
+                <p>Acc Y: <span class="value" id="left_ay">-</span></p>
+                <p>Acc Z: <span class="value" id="left_az">-</span></p>
+
+                <p>Gyro X: <span class="value" id="left_gx">-</span></p>
+                <p>Gyro Y: <span class="value" id="left_gy">-</span></p>
+                <p>Gyro Z: <span class="value" id="left_gz">-</span></p>
+            </div>
+
+            <h3>Pressure Sensors</h3>
+            <div class="grid">
+                <p>Toe 1 Force: <span class="value" id="left_toe1">-</span></p>
+                <p>Toe 2 Force: <span class="value" id="left_toe2">-</span></p>
+                <p>Heel Force: <span class="value" id="left_heel">-</span></p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Right Shoe Module</h2>
+
+            <h3>IMU</h3>
+            <div class="grid">
+                <p>Acc X: <span class="value" id="right_ax">-</span></p>
+                <p>Acc Y: <span class="value" id="right_ay">-</span></p>
+                <p>Acc Z: <span class="value" id="right_az">-</span></p>
+
+                <p>Gyro X: <span class="value" id="right_gx">-</span></p>
+                <p>Gyro Y: <span class="value" id="right_gy">-</span></p>
+                <p>Gyro Z: <span class="value" id="right_gz">-</span></p>
+            </div>
+
+            <h3>Pressure Sensors</h3>
+            <div class="grid">
+                <p>Toe 1 Force: <span class="value" id="right_toe1">-</span></p>
+                <p>Toe 2 Force: <span class="value" id="right_toe2">-</span></p>
+                <p>Heel Force: <span class="value" id="right_heel">-</span></p>
+            </div>
+        </div>
+
     </div>
 </div>
 
@@ -99,10 +166,6 @@
         status.className = "connected";
     });
 
-    socket.onAny(function(eventName, ...args) {
-        console.log("SocketIO event:", eventName, args);
-    });
-
     socket.on("disconnect", function() {
         console.log("Disconnected from Flask SocketIO");
         const status = document.getElementById("socketStatus");
@@ -110,40 +173,63 @@
         status.className = "disconnected";
     });
 
+    function updateIMU(prefix, imu) {
+        document.getElementById(prefix + "_ax").innerText = Number(imu.ax ?? 0).toFixed(4);
+        document.getElementById(prefix + "_ay").innerText = Number(imu.ay ?? 0).toFixed(4);
+        document.getElementById(prefix + "_az").innerText = Number(imu.az ?? 0).toFixed(4);
+
+        document.getElementById(prefix + "_gx").innerText = Number(imu.gx ?? 0).toFixed(4);
+        document.getElementById(prefix + "_gy").innerText = Number(imu.gy ?? 0).toFixed(4);
+        document.getElementById(prefix + "_gz").innerText = Number(imu.gz ?? 0).toFixed(4);
+    }
+
+    function updatePressure(prefix, pressure) {
+        document.getElementById(prefix + "_toe1").innerText = Number(pressure.toe1Force ?? 0).toFixed(2);
+        document.getElementById(prefix + "_toe2").innerText = Number(pressure.toe2Force ?? 0).toFixed(2);
+        document.getElementById(prefix + "_heel").innerText = Number(pressure.heelForce ?? 0).toFixed(2);
+    }
+
     socket.on("sensor_update", function(data) {
         console.log("Received sensor data:", data);
 
-        if (!data || !data.imu) {
-            console.warn("Missing imu payload:", data);
-            return;
+        if (!data) return;
+
+        const deviceId = data.deviceId;
+        const imu = data.imu || {};
+        const pressure = data.pressure || {};
+
+        document.getElementById("lastDevice").innerText = deviceId ?? "-";
+        document.getElementById("lastTimestamp").innerText = data.timestamp ?? "-";
+
+        if (deviceId === "waist_imu_01") {
+            updateIMU("waist", imu);
+
+            if (data.predictionResult) {
+                const pred = document.getElementById("prediction");
+                const prob = document.getElementById("probability");
+
+                pred.innerText = data.predictionResult.prediction;
+                prob.innerText = Number(data.predictionResult.fallProbability).toFixed(4);
+
+                if (data.predictionResult.fallProbability >= 0.5) {
+                    pred.className = "value danger";
+                } else {
+                    pred.className = "value normal";
+                }
+            } else {
+                document.getElementById("prediction").innerText = "Collecting 100 samples...";
+                document.getElementById("probability").innerText = "-";
+            }
         }
 
-        document.getElementById("deviceId").innerText = data.deviceId ?? "-";
-        document.getElementById("timestamp").innerText = data.timestamp ?? "-";
+        if (deviceId === "left_shoe_01") {
+            updateIMU("left", imu);
+            updatePressure("left", pressure);
+        }
 
-        document.getElementById("ax").innerText = Number(data.imu.ax ?? 0).toFixed(4);
-        document.getElementById("ay").innerText = Number(data.imu.ay ?? 0).toFixed(4);
-        document.getElementById("az").innerText = Number(data.imu.az ?? 0).toFixed(4);
-
-        document.getElementById("gx").innerText = Number(data.imu.gx ?? 0).toFixed(4);
-        document.getElementById("gy").innerText = Number(data.imu.gy ?? 0).toFixed(4);
-        document.getElementById("gz").innerText = Number(data.imu.gz ?? 0).toFixed(4);
-
-        if (data.predictionResult) {
-            const pred = document.getElementById("prediction");
-            const prob = document.getElementById("probability");
-
-            pred.innerText = data.predictionResult.prediction;
-            prob.innerText = Number(data.predictionResult.fallProbability).toFixed(4);
-
-            if (data.predictionResult.fallProbability >= 0.5) {
-                pred.className = "value danger";
-            } else {
-                pred.className = "value normal";
-            }
-        } else {
-            document.getElementById("prediction").innerText = "Collecting 100 samples...";
-            document.getElementById("probability").innerText = "-";
+        if (deviceId === "right_shoe_01") {
+            updateIMU("right", imu);
+            updatePressure("right", pressure);
         }
     });
 </script>

@@ -8,6 +8,7 @@ import json
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
+# ---------- Model ----------
 MODEL_PATH = "prefall_model.keras"
 MEAN_PATH = "mean.npy"
 STD_PATH = "std.npy"
@@ -16,12 +17,18 @@ model = tf.keras.models.load_model(MODEL_PATH)
 mean = np.load(MEAN_PATH)
 std = np.load(STD_PATH)
 
+WINDOW_SIZE = 100
+imu_buffer = []
+
+# ---------- MQTT ----------
 MQTT_BROKER = "broker.hivemq.com"
 MQTT_PORT = 1883
-MQTT_TOPIC = "fall_detection/waist_imu_01/imu"
 
-imu_buffer = []
-WINDOW_SIZE = 100
+MQTT_TOPICS = [
+    ("fall_detection/waist/imu", 0),
+    ("fall_detection/left_shoe/data", 0),
+    ("fall_detection/right_shoe/data", 0)
+]
 
 
 @app.route("/")
@@ -38,82 +45,91 @@ def handle_connect():
 def handle_disconnect():
     print("SocketIO client disconnected:", request.sid)
 
+def accel_ms2_to_sisfall_raw(accel_ms2):
+    # SisFall ADXL345: ±16g, 13-bit
+    accel_g = accel_ms2 / 9.81
+    return accel_g * 256.0
 
-@app.route("/test_emit")
-def test_emit():
-    sample = {
-        "deviceId": "test_device",
-        "timestamp": "manual_test",
-        "imu": {"ax": 0.1, "ay": 0.2, "az": 0.3, "gx": 0.4, "gy": 0.5, "gz": 0.6},
-        "predictionResult": {"fallProbability": 0.12, "prediction": "NORMAL"}
-    }
-    socketio.emit("sensor_update", sample)
-    return "ok"
 
+def gyro_rads_to_sisfall_raw(gyro_rads):
+    # SisFall ITG3200: ±2000 deg/s, 16-bit
+    gyro_deg_s = gyro_rads * (180.0 / np.pi)
+    return gyro_deg_s / 0.061035
 
 def run_prediction():
     if len(imu_buffer) < WINDOW_SIZE:
         return None
 
-    window = np.array(imu_buffer[-WINDOW_SIZE:])  # shape: (100, 6)
+    window = np.array(imu_buffer[-WINDOW_SIZE:], dtype=np.float32)
 
     window = (window - mean) / std
-    window = np.expand_dims(window, axis=0)       # shape: (1, 100, 6)
+    window = np.expand_dims(window, axis=0)
 
     prediction = model.predict(window, verbose=0)[0][0]
 
-    result = {
+    return {
         "fallProbability": float(prediction),
         "prediction": "PREFALL / FALL RISK" if prediction >= 0.5 else "NORMAL"
     }
 
-    return result
-
 
 def on_connect(client, userdata, flags, rc):
-    print("Connected to MQTT Broker")
-    client.subscribe(MQTT_TOPIC)
+    if rc == 0:
+        print("Connected to MQTT Broker")
+        client.subscribe(MQTT_TOPICS)
+        print("Subscribed to:", MQTT_TOPICS)
+    else:
+        print("Failed to connect to MQTT, rc =", rc)
+
+        
 
 
 def on_message(client, userdata, msg):
     try:
-        # print("MQTT topic:", msg.topic)
-        # print("MQTT payload:", msg.payload.decode())
-
+        topic = msg.topic
         payload = json.loads(msg.payload.decode())
 
-        ax = payload["imu"]["ax"]
-        ay = payload["imu"]["ay"]
-        az = payload["imu"]["az"]
-        gx = payload["imu"]["gx"]
-        gy = payload["imu"]["gy"]
-        gz = payload["imu"]["gz"]
-
-        imu_sample = [ax, ay, az, gx, gy, gz]
-        imu_buffer.append(imu_sample)
-
-        if len(imu_buffer) > WINDOW_SIZE:
-            imu_buffer.pop(0)
-
-        prediction_result = run_prediction()
+        device_id = payload.get("deviceId", "unknown_device")
+        imu = payload.get("imu", {})
+        pressure = payload.get("pressure", {})
 
         dashboard_data = {
-            "deviceId": payload.get("deviceId", "waist_imu_01"),
+            "topic": topic,
+            "deviceId": device_id,
             "timestamp": payload.get("timestamp"),
-            "imu": payload["imu"],
-            "predictionResult": prediction_result
+            "imu": imu,
+            "pressure": pressure,
+            "predictionResult": None
         }
 
-        #print("Sending to GUI:", dashboard_data)
+        # Run CNN prediction only using waist IMU
+        if device_id == "waist_imu_01":
+            ax = accel_ms2_to_sisfall_raw(imu.get("ax", 0))
+            ay = accel_ms2_to_sisfall_raw(imu.get("ay", 0))
+            az = accel_ms2_to_sisfall_raw(imu.get("az", 0))
+
+            gx = gyro_rads_to_sisfall_raw(imu.get("gx", 0))
+            gy = gyro_rads_to_sisfall_raw(imu.get("gy", 0))
+            gz = gyro_rads_to_sisfall_raw(imu.get("gz", 0))
+
+            imu_sample = [ax, ay, az, gx, gy, gz]
+            imu_buffer.append(imu_sample)
+
+            if len(imu_buffer) > WINDOW_SIZE:
+                imu_buffer.pop(0)
+
+            dashboard_data["predictionResult"] = run_prediction()
 
         socketio.emit("sensor_update", dashboard_data)
 
     except Exception as e:
-        print("Error:", e)
+        print("Error processing MQTT message:", e)
+
 
 mqtt_client = mqtt.Client()
 mqtt_client.on_connect = on_connect
 mqtt_client.on_message = on_message
+
 mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
 mqtt_client.loop_start()
 
