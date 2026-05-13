@@ -12,7 +12,7 @@
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1300px;
             margin: auto;
         }
 
@@ -28,6 +28,17 @@
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 12px;
+        }
+
+        .prediction-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+        }
+
+        .prediction-card {
+            min-height: 160px;
+            text-align: center;
         }
 
         .shoe-grid {
@@ -63,12 +74,24 @@
             margin-top: 0;
         }
 
+        @media (max-width: 1100px) {
+            .prediction-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
         @media (max-width: 900px) {
             .shoe-grid {
                 grid-template-columns: 1fr;
             }
 
             .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 700px) {
+            .prediction-grid {
                 grid-template-columns: 1fr;
             }
         }
@@ -87,10 +110,33 @@
         <p>Last Timestamp: <span id="lastTimestamp">-</span></p>
     </div>
 
-    <div class="card">
-        <h2>CNN Prediction</h2>
-        <p>Prediction: <span class="value" id="prediction">Waiting...</span></p>
-        <p>Fall Probability: <span class="value" id="probability">-</span></p>
+    <div class="prediction-grid">
+        <div class="card prediction-card">
+            <h2>Waist IMU CNN</h2>
+            <p>Prediction: <span class="value" id="prediction">Waiting...</span></p>
+            <p>Fall Probability: <span class="value" id="probability">-</span></p>
+        </div>
+
+        <div class="card prediction-card">
+            <h2>Three-IMU CNN</h2>
+            <p>Waist + Left Shoe + Right Shoe</p>
+            <p>Prediction: <span class="value" id="combined_prediction">Waiting...</span></p>
+            <p>Fall Probability: <span class="value" id="combined_probability">-</span></p>
+        </div>
+
+        <div class="card prediction-card">
+            <h2>Pressure CNN</h2>
+            <p>Both Shoes Pressure Sensors</p>
+            <p>Prediction: <span class="value" id="pressure_prediction">Waiting...</span></p>
+            <p>Fall Probability: <span class="value" id="pressure_probability">-</span></p>
+        </div>
+
+        <div class="card prediction-card">
+            <h2>Fusion Result</h2>
+            <p>Three-IMU CNN + Pressure CNN</p>
+            <p>Prediction: <span class="value" id="fusion_prediction">Waiting...</span></p>
+            <p>Fall Probability: <span class="value" id="fusion_probability">-</span></p>
+        </div>
     </div>
 
     <div class="card">
@@ -189,6 +235,26 @@
         document.getElementById(prefix + "_heel").innerText = Number(pressure.heelForce ?? 0).toFixed(2);
     }
 
+    function updatePrediction(predictionData, predictionId, probabilityId) {
+        const pred = document.getElementById(predictionId);
+        const prob = document.getElementById(probabilityId);
+
+        if (predictionData) {
+            pred.innerText = predictionData.prediction;
+            prob.innerText = Number(predictionData.fallProbability).toFixed(4);
+
+            if (predictionData.fallProbability >= 0.5) {
+                pred.className = "value danger";
+            } else {
+                pred.className = "value normal";
+            }
+        } else {
+            pred.innerText = "Collecting samples...";
+            prob.innerText = "-";
+            pred.className = "value";
+        }
+    }
+
     socket.on("sensor_update", function(data) {
         console.log("Received sensor data:", data);
 
@@ -203,23 +269,6 @@
 
         if (deviceId === "waist_imu_01") {
             updateIMU("waist", imu);
-
-            if (data.predictionResult) {
-                const pred = document.getElementById("prediction");
-                const prob = document.getElementById("probability");
-
-                pred.innerText = data.predictionResult.prediction;
-                prob.innerText = Number(data.predictionResult.fallProbability).toFixed(4);
-
-                if (data.predictionResult.fallProbability >= 0.5) {
-                    pred.className = "value danger";
-                } else {
-                    pred.className = "value normal";
-                }
-            } else {
-                document.getElementById("prediction").innerText = "Collecting 100 samples...";
-                document.getElementById("probability").innerText = "-";
-            }
         }
 
         if (deviceId === "left_shoe_01") {
@@ -231,6 +280,26 @@
             updateIMU("right", imu);
             updatePressure("right", pressure);
         }
+
+        updatePrediction(data.predictionResult, "prediction", "probability");
+
+        updatePrediction(
+            data.combinedPredictionResult,
+            "combined_prediction",
+            "combined_probability"
+        );
+
+        updatePrediction(
+            data.pressurePredictionResult,
+            "pressure_prediction",
+            "pressure_probability"
+        );
+
+        updatePrediction(
+            data.fusionPredictionResult,
+            "fusion_prediction",
+            "fusion_probability"
+        );
     });
 </script>
 

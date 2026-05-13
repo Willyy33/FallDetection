@@ -99,7 +99,10 @@ def on_message(client, userdata, msg):
             "timestamp": payload.get("timestamp"),
             "imu": imu,
             "pressure": pressure,
-            "predictionResult": None
+            "predictionResult": None,
+            "combinedPredictionResult": None,
+            "pressurePredictionResult": None,
+            "fusionPredictionResult": None
         }
 
         # Run CNN prediction only using waist IMU
