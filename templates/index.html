@@ -3,25 +3,110 @@
 <head>
     <title>Pre-Fall Detection Dashboard</title>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <style>
+        :root {
+            color-scheme: light;
+            --ink-900: #0b1b2b;
+            --ink-700: #1f3550;
+            --ink-500: #365173;
+            --blue-700: #0b5aa8;
+            --blue-500: #1b7bd6;
+            --blue-200: #c8e3ff;
+            --surface: #ffffff;
+            --surface-soft: #f3f7fb;
+            --stroke: #dce7f3;
+            --risk: #d64545;
+            --safe: #1c7c54;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: Arial, sans-serif;
-            background: #f4f6f8;
-            padding: 30px;
+            font-family: "Plus Jakarta Sans", "Segoe UI", system-ui, sans-serif;
+            background: radial-gradient(circle at top left, #e2f0ff 0%, #f7fbff 35%, #f2f6fb 100%);
+            padding: 32px 24px 48px;
+            color: var(--ink-900);
         }
 
         .container {
-            max-width: 1300px;
-            margin: auto;
+            max-width: 1320px;
+            margin: 0 auto;
+        }
+
+        .page-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .title-block h1 {
+            margin: 0 0 6px;
+            font-size: 30px;
+            letter-spacing: -0.02em;
+        }
+
+        .title-block p {
+            margin: 0;
+            color: var(--ink-500);
+            font-size: 14px;
+        }
+
+        .status-bar {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: var(--surface);
+            border: 1px solid var(--stroke);
+            font-size: 12px;
+            color: var(--ink-700);
+            box-shadow: 0 6px 16px rgba(15, 47, 83, 0.08);
         }
 
         .card {
-            background: white;
-            padding: 20px;
+            background: var(--surface);
+            padding: 20px 22px;
             margin-bottom: 20px;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border-radius: 16px;
+            border: 1px solid var(--stroke);
+            box-shadow: 0 18px 40px rgba(15, 47, 83, 0.08);
+        }
+
+        .section-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .section-title h2 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .tag {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--blue-700);
+            background: var(--blue-200);
+            padding: 4px 10px;
+            border-radius: 999px;
         }
 
         .grid {
@@ -30,15 +115,52 @@
             gap: 12px;
         }
 
+        .panel {
+            background: var(--surface-soft);
+            border: 1px solid var(--stroke);
+            border-radius: 12px;
+            padding: 16px;
+        }
+
+        .imu-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+        }
+
+        .pressure-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+        }
+
         .prediction-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(3, 1fr);
             gap: 15px;
         }
 
         .prediction-card {
-            min-height: 160px;
-            text-align: center;
+            min-height: 170px;
+            text-align: left;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .prediction-card h3 {
+            margin: 0 0 8px;
+            font-size: 15px;
+        }
+
+        .prediction-card p {
+            margin: 6px 0;
+            color: var(--ink-500);
+            font-size: 13px;
+        }
+
+        .prediction-card .value {
+            font-size: 18px;
         }
 
         .shoe-grid {
@@ -49,25 +171,51 @@
 
         .value {
             font-size: 20px;
-            font-weight: bold;
+            font-weight: 600;
+            color: var(--ink-900);
         }
 
         .normal {
-            color: green;
+            color: var(--safe);
         }
 
         .danger {
-            color: red;
+            color: var(--risk);
         }
 
         .connected {
-            color: green;
-            font-weight: bold;
+            color: var(--safe);
+            font-weight: 600;
         }
 
         .disconnected {
-            color: red;
-            font-weight: bold;
+            color: var(--risk);
+            font-weight: 600;
+        }
+
+        .chart-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 16px;
+        }
+
+        .chart-block {
+            background: var(--surface-soft);
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px solid var(--stroke);
+        }
+
+        .chart-block h3 {
+            margin: 0 0 10px;
+            font-size: 14px;
+            color: var(--ink-700);
+        }
+
+        canvas {
+            width: 100%;
+            height: 160px;
+            display: block;
         }
 
         h1, h2, h3 {
@@ -78,6 +226,10 @@
             .prediction-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
+
+            .chart-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
         @media (max-width: 900px) {
@@ -87,6 +239,15 @@
 
             .grid {
                 grid-template-columns: 1fr;
+            }
+
+            .pressure-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .page-header {
+                flex-direction: column;
+                align-items: flex-start;
             }
         }
 
@@ -101,109 +262,124 @@
 <body>
 
 <div class="container">
-    <h1>ESP32 Pre-Fall Detection Dashboard</h1>
+    <div class="page-header">
+        <div class="title-block">
+            <h1>Pre-Fall Detection</h1>
+            <p>Continuous monitoring with real-time sensor fusion and model risk scoring.</p>
+        </div>
+        <div class="status-bar">
+            <div class="chip">Socket: <span id="socketStatus" class="disconnected">Connected</span></div>
+            <div class="chip">Last Device: <span id="lastDevice">-</span></div>
+            <div class="chip">Timestamp: <span id="lastTimestamp">-</span></div>
+        </div>
+    </div>
 
     <div class="card">
-        <h2>Connection Status</h2>
-        <p>SocketIO: <span id="socketStatus" class="disconnected">Disconnected</span></p>
-        <p>Last Device: <span id="lastDevice">Waiting...</span></p>
-        <p>Last Timestamp: <span id="lastTimestamp">-</span></p>
+        <div class="section-title">
+            <h2>Live Signal Overview</h2>
+            <span class="tag">Graph Readings</span>
+        </div>
+        <div class="chart-grid">
+            <div class="chart-block">
+                <h3>Waist IMU Magnitude</h3>
+                <canvas id="imuChart" width="600" height="160"></canvas>
+            </div>
+            <div class="chart-block">
+                <h3>Shoe Pressure Average</h3>
+                <canvas id="pressureChart" width="600" height="160"></canvas>
+            </div>
+        </div>
     </div>
 
     <div class="prediction-grid">
         <div class="card prediction-card">
-            <h2>Waist IMU CNN</h2>
-            <p>Prediction: <span class="value" id="prediction">Waiting...</span></p>
-            <p>Fall Probability: <span class="value" id="probability">-</span></p>
+            <div>
+                <h3>Waist IMU CNN</h3>
+            </div>
+            <div>
+                <p>Prediction: <span class="value" id="prediction">Waiting...</span></p>
+                <p>Fall Probability: <span class="value" id="probability">-</span></p>
+            </div>
         </div>
 
         <div class="card prediction-card">
-            <h2>Three-IMU CNN</h2>
-            <p>Waist + Left Shoe + Right Shoe</p>
-            <p>Prediction: <span class="value" id="combined_prediction">Waiting...</span></p>
-            <p>Fall Probability: <span class="value" id="combined_probability">-</span></p>
+            <div>
+                <h3>Pressure CNN</h3>
+            </div>
+            <div>
+                <p>Prediction: <span class="value" id="pressure_prediction">Waiting...</span></p>
+                <p>Fall Probability: <span class="value" id="pressure_probability">-</span></p>
+            </div>
         </div>
 
         <div class="card prediction-card">
-            <h2>Pressure CNN</h2>
-            <p>Both Shoes Pressure Sensors</p>
-            <p>Prediction: <span class="value" id="pressure_prediction">Waiting...</span></p>
-            <p>Fall Probability: <span class="value" id="pressure_probability">-</span></p>
-        </div>
-
-        <div class="card prediction-card">
-            <h2>Fusion Result</h2>
-            <p>Three-IMU CNN + Pressure CNN</p>
-            <p>Prediction: <span class="value" id="fusion_prediction">Waiting...</span></p>
-            <p>Fall Probability: <span class="value" id="fusion_probability">-</span></p>
+            <div>
+                <h3>Fusion Result</h3>
+                <p>Waist IMU + Pressure CNN</p>
+            </div>
+            <div>
+                <p>Prediction: <span class="value" id="fusion_prediction">Waiting...</span></p>
+                <p>Fall Probability: <span class="value" id="fusion_probability">-</span></p>
+            </div>
         </div>
     </div>
 
     <div class="card">
-        <h2>Waist IMU</h2>
+        <div class="section-title">
+            <h2>IMU Sensors</h2>
+            <span class="tag">Accelerometer + Gyroscope</span>
+        </div>
+        <div class="imu-grid">
+            <div class="panel">
+                <h3>Waist IMU</h3>
+                <div class="grid">
+                    <p>Acc X: <span class="value" id="waist_ax">-</span></p>
+                    <p>Acc Y: <span class="value" id="waist_ay">-</span></p>
+                    <p>Acc Z: <span class="value" id="waist_az">-</span></p>
 
-        <div class="grid">
-            <p>Acc X: <span class="value" id="waist_ax">-</span></p>
-            <p>Acc Y: <span class="value" id="waist_ay">-</span></p>
-            <p>Acc Z: <span class="value" id="waist_az">-</span></p>
-
-            <p>Gyro X: <span class="value" id="waist_gx">-</span></p>
-            <p>Gyro Y: <span class="value" id="waist_gy">-</span></p>
-            <p>Gyro Z: <span class="value" id="waist_gz">-</span></p>
+                    <p>Gyro X: <span class="value" id="waist_gx">-</span></p>
+                    <p>Gyro Y: <span class="value" id="waist_gy">-</span></p>
+                    <p>Gyro Z: <span class="value" id="waist_gz">-</span></p>
+                </div>
+            </div>
         </div>
     </div>
 
-    <div class="shoe-grid">
-
-        <div class="card">
-            <h2>Left Shoe Module</h2>
-
-            <h3>IMU</h3>
-            <div class="grid">
-                <p>Acc X: <span class="value" id="left_ax">-</span></p>
-                <p>Acc Y: <span class="value" id="left_ay">-</span></p>
-                <p>Acc Z: <span class="value" id="left_az">-</span></p>
-
-                <p>Gyro X: <span class="value" id="left_gx">-</span></p>
-                <p>Gyro Y: <span class="value" id="left_gy">-</span></p>
-                <p>Gyro Z: <span class="value" id="left_gz">-</span></p>
+    <div class="card">
+        <div class="section-title">
+            <h2>Shoe Pressure Sensors</h2>
+            <span class="tag">Toe + Heel Forces</span>
+        </div>
+        <div class="pressure-grid">
+            <div class="panel">
+                <h3>Left Shoe Pressure</h3>
+                <div class="grid">
+                    <p>Toe 1 Force: <span class="value" id="left_toe1">-</span></p>
+                    <p>Toe 2 Force: <span class="value" id="left_toe2">-</span></p>
+                    <p>Heel Force: <span class="value" id="left_heel">-</span></p>
+                </div>
             </div>
 
-            <h3>Pressure Sensors</h3>
-            <div class="grid">
-                <p>Toe 1 Force: <span class="value" id="left_toe1">-</span></p>
-                <p>Toe 2 Force: <span class="value" id="left_toe2">-</span></p>
-                <p>Heel Force: <span class="value" id="left_heel">-</span></p>
+            <div class="panel">
+                <h3>Right Shoe Pressure</h3>
+                <div class="grid">
+                    <p>Toe 1 Force: <span class="value" id="right_toe1">-</span></p>
+                    <p>Toe 2 Force: <span class="value" id="right_toe2">-</span></p>
+                    <p>Heel Force: <span class="value" id="right_heel">-</span></p>
+                </div>
             </div>
         </div>
-
-        <div class="card">
-            <h2>Right Shoe Module</h2>
-
-            <h3>IMU</h3>
-            <div class="grid">
-                <p>Acc X: <span class="value" id="right_ax">-</span></p>
-                <p>Acc Y: <span class="value" id="right_ay">-</span></p>
-                <p>Acc Z: <span class="value" id="right_az">-</span></p>
-
-                <p>Gyro X: <span class="value" id="right_gx">-</span></p>
-                <p>Gyro Y: <span class="value" id="right_gy">-</span></p>
-                <p>Gyro Z: <span class="value" id="right_gz">-</span></p>
-            </div>
-
-            <h3>Pressure Sensors</h3>
-            <div class="grid">
-                <p>Toe 1 Force: <span class="value" id="right_toe1">-</span></p>
-                <p>Toe 2 Force: <span class="value" id="right_toe2">-</span></p>
-                <p>Heel Force: <span class="value" id="right_heel">-</span></p>
-            </div>
-        </div>
-
     </div>
 </div>
 
 <script>
     const socket = io(window.location.origin);
+    const useSampleData = false;
+    const imuSeries = [];
+    const pressureSeries = [];
+    const maxPoints = 60;
+    let lastLeftPressure = 0;
+    let lastRightPressure = 0;
 
     socket.on("connect", function() {
         console.log("Connected to Flask SocketIO");
@@ -218,6 +394,47 @@
         status.innerText = "Disconnected";
         status.className = "disconnected";
     });
+
+    function drawSparkline(canvasId, data, color) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+
+        const ctx = canvas.getContext("2d");
+        const width = canvas.width;
+        const height = canvas.height;
+
+        ctx.clearRect(0, 0, width, height);
+
+        if (!data.length) return;
+
+        const min = Math.min(...data);
+        const max = Math.max(...data);
+        const range = max - min || 1;
+        const step = width / (data.length - 1 || 1);
+
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+
+        data.forEach((value, index) => {
+            const x = index * step;
+            const y = height - ((value - min) / range) * height;
+
+            if (index === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        });
+
+        ctx.stroke();
+
+        ctx.fillStyle = "rgba(27, 123, 214, 0.08)";
+        ctx.lineTo(width, height);
+        ctx.lineTo(0, height);
+        ctx.closePath();
+        ctx.fill();
+    }
 
     function updateIMU(prefix, imu) {
         document.getElementById(prefix + "_ax").innerText = Number(imu.ax ?? 0).toFixed(4);
@@ -255,7 +472,7 @@
         }
     }
 
-    socket.on("sensor_update", function(data) {
+    function handleSensorUpdate(data) {
         console.log("Received sensor data:", data);
 
         if (!data) return;
@@ -269,25 +486,43 @@
 
         if (deviceId === "waist_imu_01") {
             updateIMU("waist", imu);
+            const magnitude = Math.sqrt(
+                Math.pow(Number(imu.ax ?? 0), 2) +
+                Math.pow(Number(imu.ay ?? 0), 2) +
+                Math.pow(Number(imu.az ?? 0), 2)
+            );
+            imuSeries.push(magnitude);
+            if (imuSeries.length > maxPoints) {
+                imuSeries.shift();
+            }
         }
 
         if (deviceId === "left_shoe_01") {
-            updateIMU("left", imu);
             updatePressure("left", pressure);
+            lastLeftPressure = Number(pressure.toe1Force ?? 0) +
+                Number(pressure.toe2Force ?? 0) +
+                Number(pressure.heelForce ?? 0);
         }
 
         if (deviceId === "right_shoe_01") {
-            updateIMU("right", imu);
             updatePressure("right", pressure);
+            lastRightPressure = Number(pressure.toe1Force ?? 0) +
+                Number(pressure.toe2Force ?? 0) +
+                Number(pressure.heelForce ?? 0);
         }
 
-        updatePrediction(data.predictionResult, "prediction", "probability");
+        const pressureAvg = (lastLeftPressure + lastRightPressure) / 2;
+        if (!Number.isNaN(pressureAvg)) {
+            pressureSeries.push(pressureAvg);
+            if (pressureSeries.length > maxPoints) {
+                pressureSeries.shift();
+            }
+        }
 
-        updatePrediction(
-            data.combinedPredictionResult,
-            "combined_prediction",
-            "combined_probability"
-        );
+        drawSparkline("imuChart", imuSeries, "#1b7bd6");
+        drawSparkline("pressureChart", pressureSeries, "#0b5aa8");
+
+        updatePrediction(data.predictionResult, "prediction", "probability");
 
         updatePrediction(
             data.pressurePredictionResult,
@@ -300,7 +535,11 @@
             "fusion_prediction",
             "fusion_probability"
         );
-    });
+    }
+
+    socket.on("sensor_update", handleSensorUpdate);
+
+    // Sample data generator disabled. UI updates only from MQTT-driven SocketIO events.
 </script>
 
 </body>

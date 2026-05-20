@@ -4,6 +4,7 @@ import paho.mqtt.client as mqtt
 import numpy as np
 import tensorflow as tf
 import json
+from collections import deque
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
@@ -18,10 +19,14 @@ mean = np.load(MEAN_PATH)
 std = np.load(STD_PATH)
 
 WINDOW_SIZE = 100
-imu_buffer = []
+imu_buffer = deque(maxlen=WINDOW_SIZE)
+
+sample_count = 0
+latest_prediction = None
+PREDICT_EVERY_N_SAMPLES = 10
 
 # ---------- MQTT ----------
-MQTT_BROKER = "broker.hivemq.com"
+MQTT_BROKER = "localhost"
 MQTT_PORT = 1883
 
 MQTT_TOPICS = [
@@ -45,6 +50,7 @@ def handle_connect():
 def handle_disconnect():
     print("SocketIO client disconnected:", request.sid)
 
+
 def accel_ms2_to_sisfall_raw(accel_ms2):
     # SisFall ADXL345: ±16g, 13-bit
     accel_g = accel_ms2 / 9.81
@@ -56,11 +62,12 @@ def gyro_rads_to_sisfall_raw(gyro_rads):
     gyro_deg_s = gyro_rads * (180.0 / np.pi)
     return gyro_deg_s / 0.061035
 
+
 def run_prediction():
     if len(imu_buffer) < WINDOW_SIZE:
         return None
 
-    window = np.array(imu_buffer[-WINDOW_SIZE:], dtype=np.float32)
+    window = np.array(list(imu_buffer), dtype=np.float32)
 
     window = (window - mean) / std
     window = np.expand_dims(window, axis=0)
@@ -81,10 +88,14 @@ def on_connect(client, userdata, flags, rc):
     else:
         print("Failed to connect to MQTT, rc =", rc)
 
-        
+
+def on_disconnect(client, userdata, rc):
+    print("Disconnected from MQTT Broker, rc =", rc)
 
 
 def on_message(client, userdata, msg):
+    global sample_count, latest_prediction
+
     try:
         topic = msg.topic
         payload = json.loads(msg.payload.decode())
@@ -99,30 +110,34 @@ def on_message(client, userdata, msg):
             "timestamp": payload.get("timestamp"),
             "imu": imu,
             "pressure": pressure,
-            "predictionResult": None,
+            "predictionResult": latest_prediction,
             "combinedPredictionResult": None,
             "pressurePredictionResult": None,
             "fusionPredictionResult": None
         }
 
-        # Run CNN prediction only using waist IMU
+        # Only use waist IMU data for CNN prediction
         if device_id == "waist_imu_01":
-            ax = accel_ms2_to_sisfall_raw(imu.get("ax", 0))
-            ay = accel_ms2_to_sisfall_raw(imu.get("ay", 0))
-            az = accel_ms2_to_sisfall_raw(imu.get("az", 0))
+            ax = accel_ms2_to_sisfall_raw(float(imu.get("ax", 0)))
+            ay = accel_ms2_to_sisfall_raw(float(imu.get("ay", 0)))
+            az = accel_ms2_to_sisfall_raw(float(imu.get("az", 0)))
 
-            gx = gyro_rads_to_sisfall_raw(imu.get("gx", 0))
-            gy = gyro_rads_to_sisfall_raw(imu.get("gy", 0))
-            gz = gyro_rads_to_sisfall_raw(imu.get("gz", 0))
+            gx = gyro_rads_to_sisfall_raw(float(imu.get("gx", 0)))
+            gy = gyro_rads_to_sisfall_raw(float(imu.get("gy", 0)))
+            gz = gyro_rads_to_sisfall_raw(float(imu.get("gz", 0)))
 
             imu_sample = [ax, ay, az, gx, gy, gz]
             imu_buffer.append(imu_sample)
 
-            if len(imu_buffer) > WINDOW_SIZE:
-                imu_buffer.pop(0)
+            sample_count += 1
 
-            dashboard_data["predictionResult"] = run_prediction()
+            # Run prediction less frequently to avoid web delay
+            if len(imu_buffer) == WINDOW_SIZE and sample_count % PREDICT_EVERY_N_SAMPLES == 0:
+                latest_prediction = run_prediction()
 
+            dashboard_data["predictionResult"] = latest_prediction
+
+        # Emit raw sensor data immediately
         socketio.emit("sensor_update", dashboard_data)
 
     except Exception as e:
@@ -131,10 +146,15 @@ def on_message(client, userdata, msg):
 
 mqtt_client = mqtt.Client()
 mqtt_client.on_connect = on_connect
+mqtt_client.on_disconnect = on_disconnect
 mqtt_client.on_message = on_message
 
-mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
-mqtt_client.loop_start()
+try:
+    mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+    mqtt_client.loop_start()
+    print("MQTT client started")
+except Exception as e:
+    print("Failed to connect to MQTT broker:", e)
 
 
 if __name__ == "__main__":
