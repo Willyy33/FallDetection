@@ -7,7 +7,6 @@ import json
 import time
 import threading
 from collections import deque
-from pathlib import Path
 
 # ==========================================================
 # Flask / SocketIO
@@ -38,80 +37,6 @@ last_waist_imu_time = 0
 
 
 # ==========================================================
-# PRESSURE CNN MODEL - RIGHT SHOE ONLY
-# ==========================================================
-PRESSURE_MODEL_DIR = Path("pressure_model")
-
-PRESSURE_MODEL_CANDIDATES = [
-    PRESSURE_MODEL_DIR / "pressure_cnn_one_shoe_model_final.keras",
-    PRESSURE_MODEL_DIR / "pressure_cnn_one_shoe_model.keras",
-    PRESSURE_MODEL_DIR / "pressure_cnn_model_final.keras",
-    PRESSURE_MODEL_DIR / "pressure_cnn_model.keras",
-]
-
-PRESSURE_MEAN_PATH = PRESSURE_MODEL_DIR / "pressure_mean.npy"
-PRESSURE_STD_PATH = PRESSURE_MODEL_DIR / "pressure_std.npy"
-
-pressure_model_path = None
-
-for candidate in PRESSURE_MODEL_CANDIDATES:
-    if candidate.exists():
-        pressure_model_path = candidate
-        break
-
-if pressure_model_path is None:
-    raise FileNotFoundError(
-        "Pressure model not found inside /pressure_model. "
-        "Expected one of: pressure_cnn_one_shoe_model_final.keras, "
-        "pressure_cnn_one_shoe_model.keras, pressure_cnn_model_final.keras, "
-        "pressure_cnn_model.keras"
-    )
-
-if not PRESSURE_MEAN_PATH.exists():
-    raise FileNotFoundError("pressure_mean.npy not found inside /pressure_model")
-
-if not PRESSURE_STD_PATH.exists():
-    raise FileNotFoundError("pressure_std.npy not found inside /pressure_model")
-
-pressure_model = tf.keras.models.load_model(pressure_model_path)
-pressure_mean = np.load(PRESSURE_MEAN_PATH)
-pressure_std = np.load(PRESSURE_STD_PATH)
-
-pressure_input_shape = pressure_model.input_shape
-
-if len(pressure_input_shape) != 3:
-    raise ValueError(
-        f"Pressure model input shape should be 3D, but got: {pressure_input_shape}"
-    )
-
-PRESSURE_WINDOW_SIZE = pressure_input_shape[1]
-PRESSURE_FEATURE_COUNT = pressure_input_shape[2]
-
-if PRESSURE_FEATURE_COUNT != 3:
-    raise ValueError(
-        f"Pressure model expects {PRESSURE_FEATURE_COUNT} features, "
-        "but right shoe pressure input has 3 features: toe1, toe2, heel."
-    )
-
-pressure_buffer_right = deque(maxlen=PRESSURE_WINDOW_SIZE)
-pressure_buffer_lock = threading.Lock()
-
-pressure_sample_count = 0
-latest_pressure_prediction = None
-last_pressure_sample_count = 0
-last_right_pressure_time = 0
-
-latest_fusion_prediction = None
-
-print("Loaded pressure model:", pressure_model_path)
-print("Pressure model input shape:", pressure_model.input_shape)
-print("Pressure window size:", PRESSURE_WINDOW_SIZE)
-print("Pressure feature count:", PRESSURE_FEATURE_COUNT)
-print("Pressure mean shape:", pressure_mean.shape)
-print("Pressure std shape:", pressure_std.shape)
-
-
-# ==========================================================
 # DASHBOARD STATE
 # ==========================================================
 dashboard_lock = threading.Lock()
@@ -121,28 +46,12 @@ latest_sensor_data = {
         "deviceId": "waist_imu_01",
         "timestamp": None,
         "imu": {},
-        "pressure": {},
-        "topic": None
-    },
-    "left_shoe_01": {
-        "deviceId": "left_shoe_01",
-        "timestamp": None,
-        "imu": {},
-        "pressure": {},
-        "topic": None
-    },
-    "right_shoe_01": {
-        "deviceId": "right_shoe_01",
-        "timestamp": None,
-        "imu": {},
-        "pressure": {},
         "topic": None
     }
 }
 
 EMIT_INTERVAL = 0.1
 IMU_PREDICT_INTERVAL = 0.5
-PRESSURE_PREDICT_INTERVAL = 0.5
 
 
 # ==========================================================
@@ -152,9 +61,7 @@ MQTT_BROKER = "192.168.0.10"
 MQTT_PORT = 1883
 
 MQTT_TOPICS = [
-    ("fall_detection/waist/imu", 0),
-    ("fall_detection/left_shoe/data", 0),
-    ("fall_detection/right_shoe/data", 0)
+    ("fall_detection/waist/imu", 0)
 ]
 
 
@@ -196,53 +103,7 @@ def normalize_device_id(device_id, topic):
     if topic == "fall_detection/waist/imu":
         return "waist_imu_01"
 
-    if topic == "fall_detection/left_shoe/data":
-        return "left_shoe_01"
-
-    if topic == "fall_detection/right_shoe/data":
-        return "right_shoe_01"
-
     return device_id or "unknown_device"
-
-
-def get_pressure_value(pressure, *possible_keys):
-    for key in possible_keys:
-        if key in pressure:
-            try:
-                value = float(pressure.get(key, 0.0))
-                return max(0.0, min(1.0, value))
-            except Exception:
-                return 0.0
-
-    return 0.0
-
-
-def extract_pressure_sample(pressure):
-    toe1 = get_pressure_value(
-        pressure,
-        "toe1Force",
-        "toe1Pressure",
-        "toe_fsr402_1_pressure",
-        "toe_fsr402_1"
-    )
-
-    toe2 = get_pressure_value(
-        pressure,
-        "toe2Force",
-        "toe2Pressure",
-        "toe_fsr402_2_pressure",
-        "toe_fsr402_2"
-    )
-
-    heel = get_pressure_value(
-        pressure,
-        "heelForce",
-        "heelPressure",
-        "heel_rp_s40_st_pressure",
-        "heel_rp_s40_st"
-    )
-
-    return [toe1, toe2, heel]
 
 
 def model_scalar_output(prediction_output):
@@ -250,50 +111,15 @@ def model_scalar_output(prediction_output):
     return float(arr[0])
 
 
-def build_fusion_prediction(imu_prediction, pressure_prediction):
-    imu_prob = None
-    pressure_prob = None
-
-    if isinstance(imu_prediction, dict):
-        imu_prob = imu_prediction.get("fallProbability")
-
-    if isinstance(pressure_prediction, dict):
-        pressure_prob = pressure_prediction.get("fallProbability")
-
-    if imu_prob is None or pressure_prob is None:
-        return {
-            "fallProbability": None,
-            "prediction": "WAITING FOR IMU + PRESSURE",
-            "model": "fusion_50_50",
-            "weights": {"imu": 0.5, "pressure": 0.5},
-            "status": "WAITING"
-        }
-
-    fused_probability = (0.5 * float(imu_prob)) + (0.5 * float(pressure_prob))
-
-    return {
-        "fallProbability": fused_probability,
-        "prediction": "PREFALL / FALL RISK" if fused_probability >= 0.5 else "NORMAL",
-        "model": "fusion_50_50",
-        "weights": {"imu": 0.5, "pressure": 0.5},
-        "status": "RUNNING"
-    }
-
-
 # ==========================================================
 # PROCESS SENSOR DATA
 # ==========================================================
-def process_sensor_sample(device_id, imu=None, pressure=None, timestamp=None, topic=None):
+def process_sensor_sample(device_id, imu=None, timestamp=None, topic=None):
     global imu_sample_count
-    global pressure_sample_count
-    global last_right_pressure_time
     global last_waist_imu_time
 
     if imu is None:
         imu = {}
-
-    if pressure is None:
-        pressure = {}
 
     device_id = normalize_device_id(device_id, topic)
 
@@ -306,7 +132,6 @@ def process_sensor_sample(device_id, imu=None, pressure=None, timestamp=None, to
                 "deviceId": device_id,
                 "timestamp": None,
                 "imu": {},
-                "pressure": {},
                 "topic": None
             }
 
@@ -314,7 +139,6 @@ def process_sensor_sample(device_id, imu=None, pressure=None, timestamp=None, to
             "deviceId": device_id,
             "timestamp": timestamp,
             "imu": imu,
-            "pressure": pressure,
             "topic": topic
         }
 
@@ -341,21 +165,6 @@ def process_sensor_sample(device_id, imu=None, pressure=None, timestamp=None, to
 
         except Exception as e:
             print("Error processing waist IMU sample:", e)
-
-    # ------------------------------
-    # Pressure CNN prediction buffer: RIGHT SHOE ONLY
-    # ------------------------------
-    if device_id == "right_shoe_01" and pressure:
-        try:
-            pressure_sample = extract_pressure_sample(pressure)
-
-            with pressure_buffer_lock:
-                pressure_buffer_right.append(pressure_sample)
-                pressure_sample_count += 1
-                last_right_pressure_time = time.time()
-
-        except Exception as e:
-            print("Error processing right shoe pressure sample:", e)
 
 
 # ==========================================================
@@ -426,108 +235,6 @@ def imu_prediction_worker():
 
 
 # ==========================================================
-# PRESSURE PREDICTION WORKER - RIGHT SHOE ONLY
-# ==========================================================
-def pressure_prediction_worker():
-    global latest_pressure_prediction
-    global last_pressure_sample_count
-
-    print("Pressure prediction worker started")
-
-    while True:
-        try:
-            with pressure_buffer_lock:
-                current_count = pressure_sample_count
-
-                if len(pressure_buffer_right) < PRESSURE_WINDOW_SIZE:
-                    window = None
-                    buffer_length = len(pressure_buffer_right)
-                else:
-                    window = np.array(list(pressure_buffer_right), dtype=np.float32)
-                    buffer_length = len(pressure_buffer_right)
-
-            if window is not None and current_count != last_pressure_sample_count:
-                last_pressure_sample_count = current_count
-
-                expected_shape = (PRESSURE_WINDOW_SIZE, 3)
-
-                if window.shape != expected_shape:
-                    latest_pressure_prediction = {
-                        "fallProbability": None,
-                        "prediction": "PRESSURE WINDOW SHAPE ERROR",
-                        "model": "right_shoe_pressure_cnn",
-                        "windowSize": PRESSURE_WINDOW_SIZE,
-                        "bufferLength": buffer_length,
-                        "sampleCount": current_count,
-                        "input": "right_shoe_only",
-                        "status": "ERROR",
-                        "error": f"Expected {expected_shape}, got {window.shape}"
-                    }
-
-                    print("Pressure window shape error:", window.shape)
-
-                else:
-                    window = (window - pressure_mean) / pressure_std
-
-                    if window.ndim == 2:
-                        window = np.expand_dims(window, axis=0)
-                    elif window.ndim == 3:
-                        pass
-                    else:
-                        raise ValueError(
-                            f"Invalid pressure input ndim: {window.ndim}, shape: {window.shape}"
-                        )
-
-                    prediction_output = pressure_model.predict(window, verbose=0)
-                    probability = model_scalar_output(prediction_output)
-
-                    latest_pressure_prediction = {
-                        "fallProbability": probability,
-                        "prediction": "PREFALL / FALL RISK" if probability >= 0.5 else "NORMAL",
-                        "model": "right_shoe_pressure_cnn",
-                        "windowSize": PRESSURE_WINDOW_SIZE,
-                        "bufferLength": buffer_length,
-                        "sampleCount": current_count,
-                        "input": "right_shoe_only",
-                        "status": "RUNNING"
-                    }
-
-                    print(
-                        f"Right shoe pressure prediction: {probability:.4f} | "
-                        f"Samples: {current_count} | "
-                        f"Buffer: {buffer_length}/{PRESSURE_WINDOW_SIZE}"
-                    )
-
-            elif window is None:
-                latest_pressure_prediction = {
-                    "fallProbability": None,
-                    "prediction": "WAITING FOR RIGHT SHOE DATA",
-                    "model": "right_shoe_pressure_cnn",
-                    "windowSize": PRESSURE_WINDOW_SIZE,
-                    "bufferLength": buffer_length,
-                    "sampleCount": current_count,
-                    "input": "right_shoe_only",
-                    "status": "WAITING"
-                }
-
-        except Exception as e:
-            print("Pressure prediction error:", e)
-
-            latest_pressure_prediction = {
-                "fallProbability": None,
-                "prediction": "PRESSURE MODEL ERROR",
-                "model": "right_shoe_pressure_cnn",
-                "windowSize": PRESSURE_WINDOW_SIZE,
-                "sampleCount": pressure_sample_count,
-                "input": "right_shoe_only",
-                "status": "ERROR",
-                "error": str(e)
-            }
-
-        time.sleep(PRESSURE_PREDICT_INTERVAL)
-
-
-# ==========================================================
 # DASHBOARD EMIT WORKER
 # ==========================================================
 def dashboard_emit_worker():
@@ -535,54 +242,30 @@ def dashboard_emit_worker():
 
     while True:
         try:
-            global latest_fusion_prediction
-
             with dashboard_lock:
                 waist_data = latest_sensor_data.get("waist_imu_01", {}).copy()
-                left_data = latest_sensor_data.get("left_shoe_01", {}).copy()
-                right_data = latest_sensor_data.get("right_shoe_01", {}).copy()
 
             now = time.time()
 
-            right_age_seconds = None
             waist_age_seconds = None
-
-            if last_right_pressure_time:
-                right_age_seconds = round(now - last_right_pressure_time, 2)
 
             if last_waist_imu_time:
                 waist_age_seconds = round(now - last_waist_imu_time, 2)
-
-            latest_fusion_prediction = build_fusion_prediction(
-                latest_imu_prediction,
-                latest_pressure_prediction
-            )
 
             dashboard_data = {
                 "timestamp": int(now * 1000),
 
                 # Latest sensor data for frontend
                 "waist": waist_data,
-                "leftShoe": left_data,
-                "rightShoe": right_data,
 
                 # Predictions
                 "predictionResult": latest_imu_prediction,
-                "combinedPredictionResult": None,
-                "pressurePredictionResult": latest_pressure_prediction,
-                "fusionPredictionResult": latest_fusion_prediction,
 
                 # IMU debug info
                 "imuSampleCount": imu_sample_count,
                 "imuBufferLength": len(imu_buffer),
                 "imuWindowSize": IMU_WINDOW_SIZE,
-                "waistImuAgeSeconds": waist_age_seconds,
-
-                # Pressure debug info
-                "pressureSampleCount": pressure_sample_count,
-                "pressureBufferLength": len(pressure_buffer_right),
-                "pressureWindowSize": PRESSURE_WINDOW_SIZE,
-                "rightPressureAgeSeconds": right_age_seconds
+                "waistImuAgeSeconds": waist_age_seconds
             }
 
             socketio.emit("sensor_update", dashboard_data)
@@ -630,7 +313,6 @@ def on_message(client, userdata, msg):
 
             for sample in samples:
                 imu = sample.get("imu", None)
-                pressure = sample.get("pressure", None)
 
                 if imu is None:
                     imu = {
@@ -642,17 +324,9 @@ def on_message(client, userdata, msg):
                         "gz": sample.get("gz", 0)
                     }
 
-                if pressure is None:
-                    pressure = {
-                        "toe1Force": sample.get("toe1Force", sample.get("toe1Pressure", 0)),
-                        "toe2Force": sample.get("toe2Force", sample.get("toe2Pressure", 0)),
-                        "heelForce": sample.get("heelForce", sample.get("heelPressure", 0))
-                    }
-
                 process_sensor_sample(
                     device_id=device_id,
                     imu=imu,
-                    pressure=pressure,
                     timestamp=sample.get("t", sample.get("timestamp")),
                     topic=topic
                 )
@@ -662,12 +336,10 @@ def on_message(client, userdata, msg):
         # --------------------------------------------------
         else:
             imu = payload.get("imu", {})
-            pressure = payload.get("pressure", {})
 
             process_sensor_sample(
                 device_id=device_id,
                 imu=imu,
-                pressure=pressure,
                 timestamp=payload.get("timestamp"),
                 topic=topic
             )
@@ -696,7 +368,6 @@ except Exception as e:
 # START BACKGROUND WORKERS
 # ==========================================================
 threading.Thread(target=imu_prediction_worker, daemon=True).start()
-threading.Thread(target=pressure_prediction_worker, daemon=True).start()
 threading.Thread(target=dashboard_emit_worker, daemon=True).start()
 
 

@@ -129,15 +129,9 @@
             gap: 16px;
         }
 
-        .pressure-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 16px;
-        }
-
         .prediction-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: 1fr;
             gap: 15px;
         }
 
@@ -166,7 +160,7 @@
 
         .debug-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(2, 1fr);
             gap: 12px;
         }
 
@@ -214,7 +208,7 @@
 
         .chart-grid {
             display: grid;
-            grid-template-columns: 2fr 1fr;
+            grid-template-columns: 1fr;
             gap: 16px;
         }
 
@@ -241,23 +235,8 @@
             margin-top: 0;
         }
 
-        @media (max-width: 1100px) {
-            .prediction-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-
-            .chart-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .debug-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-
         @media (max-width: 900px) {
             .grid,
-            .pressure-grid,
             .debug-grid {
                 grid-template-columns: 1fr;
             }
@@ -265,12 +244,6 @@
             .page-header {
                 flex-direction: column;
                 align-items: flex-start;
-            }
-        }
-
-        @media (max-width: 700px) {
-            .prediction-grid {
-                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -282,7 +255,7 @@
     <div class="page-header">
         <div class="title-block">
             <h1>Pre-Fall Detection</h1>
-            <p>Continuous monitoring with real-time sensor fusion and model risk scoring.</p>
+            <p>Continuous waist IMU monitoring with real-time model risk scoring.</p>
         </div>
 
         <div class="status-bar">
@@ -308,16 +281,6 @@
                 <strong>IMU Buffer</strong>
                 <span id="imuBuffer">-</span>
             </div>
-
-            <div class="debug-box">
-                <strong>Right Pressure Age</strong>
-                <span id="rightPressureAge">-</span>
-            </div>
-
-            <div class="debug-box">
-                <strong>Pressure Buffer</strong>
-                <span id="pressureBuffer">-</span>
-            </div>
         </div>
     </div>
 
@@ -332,11 +295,6 @@
                 <h3>Waist IMU Magnitude</h3>
                 <canvas id="imuChart" width="600" height="160"></canvas>
             </div>
-
-            <div class="chart-block">
-                <h3>Shoe Pressure Average</h3>
-                <canvas id="pressureChart" width="600" height="160"></canvas>
-            </div>
         </div>
     </div>
 
@@ -348,27 +306,6 @@
             <div>
                 <p>Prediction: <span class="value" id="prediction">Waiting...</span></p>
                 <p>Fall Probability: <span class="value" id="probability">-</span></p>
-            </div>
-        </div>
-
-        <div class="card prediction-card">
-            <div>
-                <h3>Pressure CNN</h3>
-            </div>
-            <div>
-                <p>Prediction: <span class="value" id="pressure_prediction">Waiting...</span></p>
-                <p>Fall Probability: <span class="value" id="pressure_probability">-</span></p>
-            </div>
-        </div>
-
-        <div class="card prediction-card">
-            <div>
-                <h3>Fusion Result</h3>
-                <p>Waist IMU + Pressure CNN</p>
-            </div>
-            <div>
-                <p>Prediction: <span class="value" id="fusion_prediction">Waiting...</span></p>
-                <p>Fall Probability: <span class="value" id="fusion_probability">-</span></p>
             </div>
         </div>
     </div>
@@ -395,43 +332,13 @@
         </div>
     </div>
 
-    <div class="card">
-        <div class="section-title">
-            <h2>Shoe Pressure Sensors</h2>
-            <span class="tag">Toe + Heel Forces</span>
-        </div>
-
-        <div class="pressure-grid">
-            <div class="panel">
-                <h3>Left Shoe Pressure</h3>
-                <div class="grid">
-                    <p>Toe 1 Force: <span class="value" id="left_toe1">-</span></p>
-                    <p>Toe 2 Force: <span class="value" id="left_toe2">-</span></p>
-                    <p>Heel Force: <span class="value" id="left_heel">-</span></p>
-                </div>
-            </div>
-
-            <div class="panel">
-                <h3>Right Shoe Pressure</h3>
-                <div class="grid">
-                    <p>Toe 1 Force: <span class="value" id="right_toe1">-</span></p>
-                    <p>Toe 2 Force: <span class="value" id="right_toe2">-</span></p>
-                    <p>Heel Force: <span class="value" id="right_heel">-</span></p>
-                </div>
-            </div>
-        </div>
-    </div>
 </div>
 
 <script>
     const socket = io(window.location.origin);
 
     const imuSeries = [];
-    const pressureSeries = [];
     const maxPoints = 60;
-
-    let lastLeftPressure = 0;
-    let lastRightPressure = 0;
 
     socket.on("connect", function() {
         console.log("Connected to Flask SocketIO");
@@ -500,12 +407,6 @@
         document.getElementById(prefix + "_gz").innerText = Number(imu.gz ?? 0).toFixed(4);
     }
 
-    function updatePressure(prefix, pressure) {
-        document.getElementById(prefix + "_toe1").innerText = Number(pressure.toe1Force ?? 0).toFixed(2);
-        document.getElementById(prefix + "_toe2").innerText = Number(pressure.toe2Force ?? 0).toFixed(2);
-        document.getElementById(prefix + "_heel").innerText = Number(pressure.heelForce ?? 0).toFixed(2);
-    }
-
     function updatePrediction(predictionData, predictionId, probabilityId) {
         const pred = document.getElementById(predictionId);
         const prob = document.getElementById(probabilityId);
@@ -542,28 +443,15 @@
 
         document.getElementById("imuBuffer").innerText =
             `${data.imuBufferLength ?? 0}/${data.imuWindowSize ?? "-"}`;
-
-        document.getElementById("rightPressureAge").innerText =
-            data.rightPressureAgeSeconds !== null && data.rightPressureAgeSeconds !== undefined
-                ? data.rightPressureAgeSeconds + "s ago"
-                : "No right shoe data";
-
-        document.getElementById("pressureBuffer").innerText =
-            `${data.pressureBufferLength ?? 0}/${data.pressureWindowSize ?? "-"}`;
     }
 
-    function updateLastDevice(waist, left, right, data) {
-        const devices = [waist, left, right].filter(d => {
-            return d && d.timestamp !== null && d.timestamp !== undefined;
-        });
-
+    function updateLastDevice(waist, data) {
         let latestDevice = "-";
         let latestTimestamp = "-";
 
-        if (devices.length > 0) {
-            devices.sort((a, b) => Number(b.timestamp) - Number(a.timestamp));
-            latestDevice = devices[0].deviceId || "-";
-            latestTimestamp = devices[0].timestamp || "-";
+        if (waist && waist.timestamp !== null && waist.timestamp !== undefined) {
+            latestDevice = waist.deviceId || "-";
+            latestTimestamp = waist.timestamp || "-";
         } else if (data.timestamp) {
             latestTimestamp = data.timestamp;
         }
@@ -582,20 +470,6 @@
         );
     }
 
-    function hasRealPressureData(sensorData) {
-        return (
-            sensorData &&
-            sensorData.timestamp !== null &&
-            sensorData.timestamp !== undefined &&
-            sensorData.pressure &&
-            (
-                sensorData.pressure.toe1Force !== undefined ||
-                sensorData.pressure.toe2Force !== undefined ||
-                sensorData.pressure.heelForce !== undefined
-            )
-        );
-    }
-
     function handleSensorUpdate(data) {
         console.log("Received sensor data:", data);
 
@@ -604,10 +478,8 @@
         updateDebugStatus(data);
 
         const waist = data.waist || {};
-        const left = data.leftShoe || {};
-        const right = data.rightShoe || {};
 
-        updateLastDevice(waist, left, right, data);
+        updateLastDevice(waist, data);
 
         if (hasRealIMUData(waist)) {
             updateIMU("waist", waist.imu);
@@ -625,50 +497,9 @@
             }
         }
 
-        if (hasRealPressureData(left)) {
-            updatePressure("left", left.pressure);
-
-            lastLeftPressure =
-                Number(left.pressure.toe1Force ?? 0) +
-                Number(left.pressure.toe2Force ?? 0) +
-                Number(left.pressure.heelForce ?? 0);
-        }
-
-        if (hasRealPressureData(right)) {
-            updatePressure("right", right.pressure);
-
-            lastRightPressure =
-                Number(right.pressure.toe1Force ?? 0) +
-                Number(right.pressure.toe2Force ?? 0) +
-                Number(right.pressure.heelForce ?? 0);
-        }
-
-        const pressureAvg = (lastLeftPressure + lastRightPressure) / 2;
-
-        if (!Number.isNaN(pressureAvg)) {
-            pressureSeries.push(pressureAvg);
-
-            if (pressureSeries.length > maxPoints) {
-                pressureSeries.shift();
-            }
-        }
-
         drawSparkline("imuChart", imuSeries, "#1b7bd6");
-        drawSparkline("pressureChart", pressureSeries, "#0b5aa8");
 
         updatePrediction(data.predictionResult, "prediction", "probability");
-
-        updatePrediction(
-            data.pressurePredictionResult,
-            "pressure_prediction",
-            "pressure_probability"
-        );
-
-        updatePrediction(
-            data.fusionPredictionResult,
-            "fusion_prediction",
-            "fusion_probability"
-        );
     }
 
     socket.on("sensor_update", handleSensorUpdate);
