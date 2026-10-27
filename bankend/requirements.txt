@@ -1,0 +1,6 @@
+flask
+flask-socketio
+websockets
+onnxruntime
+numpy
+eventlet

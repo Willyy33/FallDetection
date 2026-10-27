@@ -1,2 +1,34 @@
-venv
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual environments
+venv/
+bankend/venv/
+.venv/
+
+# Node
+node_modules/
+
+# Frontend build output
+frontend/dist/
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
+# Superseded model artifacts
+bankend/prefall_model.keras
+bankend/mean.npy
+bankend/std.npy
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local overrides
+*.local
+
 Dockerfile
